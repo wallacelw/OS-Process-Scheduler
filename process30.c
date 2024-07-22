@@ -9,7 +9,7 @@ int main() {
 
     // simulate a real process
     long int i = 0;
-    long limit = 14e9;
+    long limit = 13.8e9;
     for(i=0;i<limit;i++) {}
 
     // get end time in seconds
