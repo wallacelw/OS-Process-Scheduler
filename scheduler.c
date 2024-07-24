@@ -13,14 +13,49 @@ struct Process {
     enum Type type;
 };
 
-#define cores 2
+typedef struct {
+    int id;
+    char command[20];
+    char input_dependency[50];
+} Data;
+
 #define num_processes 6
 
-// variable used as semaphore, if available_cores == 0 => block
-int available_cores = cores;
 
-pid_t child_pid[cores];
-int child_id[cores];
+// Função para ler o arquivo e armazenar os dados em uma lista
+Data* readFile(const char *filename, int *numLines) {
+    FILE *file = fopen(filename, "r");
+    if (file == NULL) {
+        perror("Erro ao abrir o arquivo");
+        return NULL;
+    }
+
+    Data *dataList = NULL;
+    *numLines = 0;
+    char line[100];
+
+    while (fgets(line, sizeof(line), file)) {
+        dataList = realloc(dataList, (*numLines + 1) * sizeof(Data));
+        if (dataList == NULL) {
+            perror("Erro ao realocar memória");
+            fclose(file);
+            return NULL;
+        }
+
+        sscanf(line, "%d %s %s", &dataList[*numLines].id, dataList[*numLines].command, dataList[*numLines].input_dependency);
+        (*numLines)++;
+    }
+
+    fclose(file);
+    return dataList;
+}
+
+// Função para imprimir a lista de dados
+void printDataList(Data *dataList, int numLines) {
+    for (int i = 0; i < numLines; i++) {
+        printf("ID: %d, Command: %s, Input Dependency: %s\n", dataList[i].id, dataList[i].command, dataList[i].input_dependency);
+    }
+}
 
 void print_time() {
     double time = clock();
@@ -28,7 +63,7 @@ void print_time() {
     printf("[%010.6lf] ", time);
 }
 
-void busy_waiting() {
+void busy_waiting(int cores, int available_cores, pid_t child_pid[], int child_id[]) {
     for(int j=0; j<cores; j++) if (child_pid[j]) {
 
         int status;
@@ -53,7 +88,18 @@ void busy_waiting() {
     }
 }
 
-int main() {
+int main(int argc, char *argv[]) {
+
+    int cores = *argv[1];
+    printf("NÚMERO DE NÚCLEOS %s\n", argv[1]);
+
+    // variable used as semaphore, if available_cores == 0 => block
+    int available_cores = cores;
+
+    pid_t child_pid[cores];
+    int child_id[cores];
+
+    const char *filename = "test.txt";
     
     // initialize array to store children pids with value 0 (not used)
     memset(child_pid, 0, sizeof(child_pid));
@@ -62,6 +108,14 @@ int main() {
         // hard-coded testcase
         {0, T15}, {1, T30}, {2, T15}, {3, T15}, {4, T30}, {5, T15}
     };
+
+    int numLines;
+    Data *dataList = readFile(filename, &numLines);
+
+    if (dataList != NULL) {
+        printDataList(dataList, numLines);
+        free(dataList);
+    }
 
     // get start time in seconds
     double start_time = clock();
@@ -73,7 +127,7 @@ int main() {
         // if there are no cores available, block and wait for any child_pid to terminate
         // Block using busy waiting!
         while(available_cores == 0) {
-            busy_waiting();
+            busy_waiting(cores, available_cores, child_pid, child_id);
         }
 
         // allocate a core
@@ -121,7 +175,7 @@ int main() {
 
     // block main process until all children exit and cores are released
     while(available_cores < cores) {
-        busy_waiting();
+        busy_waiting(cores, available_cores, child_pid, child_id);
     }
 
     // get end time in seconds
