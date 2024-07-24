@@ -1,5 +1,9 @@
 #include <time.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <sys/wait.h>
 
 int main() {
     
@@ -18,5 +22,5 @@ int main() {
 
     // compute runtime and print it
     double run_time = end_time - start_time;
-    printf("Time Elapsed: %.6lf \n", run_time);
+    printf("Time Elapsed for Process (%d): %.6lf \n", getpid(), run_time);
 }

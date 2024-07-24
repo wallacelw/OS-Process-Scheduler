@@ -9,11 +9,11 @@ GCC compiler
 # Execution Command
 
 ```bash
-gcc process15.c -o process15.exe
-./process15.exe
+gcc -g -Wall -Wextra -o process15 process15.c
+./process15
 
-gcc process30.c -o process30.exe
-./process30.exe
+gcc -g -Wall -Wextra -o process30 process30.c
+./process30
 
 ```
 
