@@ -22,5 +22,5 @@ int main() {
 
     // compute runtime and print it
     double run_time = end_time - start_time;
-    printf("Time Elapsed for Process (%d): %.6lf \n", getpid(), run_time);
+    printf("Time Elapsed for Process (pid %d): %.6lf \n", getpid(), run_time);
 }
