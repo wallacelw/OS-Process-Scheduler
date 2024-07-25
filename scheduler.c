@@ -63,7 +63,7 @@ void print_time() {
     printf("[%010.6lf] ", time);
 }
 
-void busy_waiting(int cores, int available_cores, pid_t child_pid[], int child_id[]) {
+void busy_waiting(int cores, int *available_cores, pid_t child_pid[], int child_id[]) {
     for(int j=0; j<cores; j++) if (child_pid[j]) {
 
         int status;
@@ -74,7 +74,7 @@ void busy_waiting(int cores, int available_cores, pid_t child_pid[], int child_i
             printf("+ (pid %d) {id %d} Exited with status %d\n", child_pid[j], child_id[j], WEXITSTATUS(status));
             
             // release a core
-            available_cores += 1;
+            *available_cores += 1;
             child_pid[j] = 0;
             break;
         }
@@ -90,7 +90,7 @@ void busy_waiting(int cores, int available_cores, pid_t child_pid[], int child_i
 
 int main(int argc, char *argv[]) {
 
-    int cores = *argv[1];
+    const int cores = atoi(argv[1]);
     printf("NÚMERO DE NÚCLEOS %s\n", argv[1]);
 
     // variable used as semaphore, if available_cores == 0 => block
@@ -127,7 +127,7 @@ int main(int argc, char *argv[]) {
         // if there are no cores available, block and wait for any child_pid to terminate
         // Block using busy waiting!
         while(available_cores == 0) {
-            busy_waiting(cores, available_cores, child_pid, child_id);
+            busy_waiting(cores, &available_cores, child_pid, child_id);
         }
 
         // allocate a core
@@ -175,7 +175,7 @@ int main(int argc, char *argv[]) {
 
     // block main process until all children exit and cores are released
     while(available_cores < cores) {
-        busy_waiting(cores, available_cores, child_pid, child_id);
+        busy_waiting(cores, &available_cores, child_pid, child_id);
     }
 
     // get end time in seconds
