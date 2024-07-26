@@ -7,22 +7,26 @@
 #include <string.h>
 #include <stdbool.h>
 
-#define MAXN 1000
+#define MAXN 10000
 
+// T15 = processo que demora 15 segundos
+// T30 = processo que demora 30 segundos
 enum Type { T15, T30 };
 
+// Lista de adjacência do grafo
 bool adj[MAXN][MAXN];
+
+// Grau de entrada de cada nó
+int indeg[MAXN];
+
+// Dado o ID do processo, ele me informa o tipo desse processo
 enum Type procType[MAXN];
 
-struct Process {
-    int id;
-    enum Type type;
-};
-
+// Estrutura de cada nó
 typedef struct {
     int id;
     char command[20];
-    char input_dependency[50];
+    char input_dependency[100];
 } Data;
 
 // Função para ler o arquivo e armazenar os dados em uma lista
@@ -58,21 +62,25 @@ void printDataList(Data *dataList, int numLines) {
     for (int i = 0; i < numLines; i++) {
         printf("ID: %d, Command: %s, Input Dependency: %s\n", dataList[i].id, dataList[i].command, dataList[i].input_dependency);
         if(strcmp(dataList[i].command, "teste15")==0){
-            procType[dataList[i].id]=T15;
-        }else{
-            procType[dataList[i].id]=T30;
+            procType[dataList[i].id] = T15;
+        }
+        else {
+            procType[dataList[i].id] = T30;
         }
     }
 }
 
 // Função para gerar o grafo
-void make_graph(Data* dataList,int num){
+void make_graph(Data* dataList, int num){
     for (int i = 0; i < num; i++) {
         int curNum=0;
-        for(int j=0;j<50;j++){
+        for(int j=0;j<100;j++){
             char curChar=dataList[i].input_dependency[j];
             if(curChar==','){
-                adj[curNum][dataList[i].id]=true;
+                if(curNum!=0){
+                    adj[curNum][dataList[i].id]=true;
+                    indeg[dataList[i].id]++;
+                }
                 curNum=0;
                 continue;
             }
@@ -83,43 +91,41 @@ void make_graph(Data* dataList,int num){
     }
 }
 
-// Busca em profundidade para conseguir a pós ordem
-void dfs(int v,int n,bool *vis, int*stack,int *idx){
-    vis[v]=true;
-    for(int i = 0;i<=n;i++){
-        if(adj[v][i] && !vis[i]){
-            dfs(i,n,vis,stack,idx);
-        }
-    }
-
-    stack[*idx]=v;
-    (*idx)++;
-}
-
-// O inverso da pós ordem é uma ordem topológica
-int* topoSort(int n){
-    bool vis[n+1];
-    memset(vis, false, sizeof(vis));
-
-    int* stack = (int*)malloc(n * sizeof(int));
-    int idx = 0;
-
-    for(int i = 1;i<=n;i++){
-        if(vis[i]==false)dfs(i,n,vis,stack,&idx);
-    }
-
-    return stack;
-}
-
-// função para imprimir o tempo atual do processo sendo executado
+// Função para imprimir o tempo atual do processo sendo executado
 void print_time() {
     double time = clock();
     time /= CLOCKS_PER_SEC;
     printf("[%010.6lf] ", time);
 }
 
-// função para verificar se algum processo filho deu exit()
-void busy_waiting(int cores, int *available_cores, pid_t child_pid[], int child_id[]) {
+// Lê o próximo elemento disponível na lista
+int readFromQueue(int *readPtr, int* queue){
+    int aux = queue[*readPtr];
+    (*readPtr)++;
+    return aux;
+}
+
+// Adiciona um nó com grau de entrada 0 na fila
+void addToQueue(int v, int* insertPtr, int* queue){
+    printf("adding: %d\n", v);
+    queue[*insertPtr] = v;
+    (*insertPtr)++;
+    // printf("adding2: %d\n", v);
+}
+
+// dado que um processo finalizou,
+// atualiza o grau de entrada dos nós adjacentes
+void attQueue(int v, int n, int* insertPtr, int* queue){
+    for(int i=1; i<=n; i++){
+        if(adj[v][i]){
+            indeg[i]--;
+            if(indeg[i]==0) addToQueue(i, insertPtr, queue);
+        }
+    }
+}
+
+// Função para verificar se algum processo filho deu exit()
+void busy_waiting(int cores, int *available_cores, pid_t child_pid[], int child_id[], int numLines, int* insertPtr, int *queue) {
     for(int j=0; j<cores; j++) if (child_pid[j]) {
 
         int status;
@@ -129,8 +135,12 @@ void busy_waiting(int cores, int *available_cores, pid_t child_pid[], int child_
             print_time();
             printf("+ (pid %d) {id %d} Exited with status %d\n", child_pid[j], child_id[j], WEXITSTATUS(status));
             
+            // atualiza o grau de entrada dos nós adjacentes
+            // attQueue(child_id[j], numLines, insertPtr, queue);
+
             // libera um core
             *available_cores += 1;
+
             child_pid[j] = 0;
             break;
         }
@@ -178,55 +188,63 @@ int main(int argc, char *argv[]) {
     make_graph(dataList, numLines);
     
     // Testa o grafo
-    for(int i = 0;i<MAXN;i++){
-        for(int j=0;j<MAXN;j++){
+    for(int i=0; i<MAXN; i++){
+        for(int j=0; j<MAXN; j++){
             if(adj[i][j]){
                 printf("aresta de %d para %d\n",i,j);
             }
         }
     }
 
-    // Obtém uma ordem topológica
-    int* stack = topoSort(numLines);
-
-
+    // Imprime a entrada lida e libera o espaço de memória
     if (dataList != NULL) {
         printDataList(dataList, numLines);
         free(dataList);
-    }
-
-    printf("TopoSort:\n");
-    printf("%d\n",numLines);
-    for(int i =numLines-1;i>=0;i--){
-        printf("%d, ",stack[i]);
-    }
-    printf("\n");
-    for(int i = 1;i<=numLines;i++){
-        printf("%d\n",(procType[i]==T15));
-    }
+    } 
 
     // inicializa o temporizador do Makespan
     double start_time = clock();
     start_time /= CLOCKS_PER_SEC; 
 
+    // cria a queue, que seria a lista dos nós que podem ser executados
+    int* queue = (int*) malloc(numLines* sizeof(int));
+    int insertPtr = 0;
+    int readPtr = 0;
+    memset(queue, -1, numLines * sizeof(int));
+
+    // inicializa a lista, com todos os nós com grau 0 de entrada
+    for(int i = 1; i<=numLines; i++){
+        printf("i: %d, indeg = %d\n",i,indeg[i]);
+        if(indeg[i]==0){
+            printf("i: %d\n",i);
+            addToQueue(i, &insertPtr, queue);
+        }
+    }
+
     // Começa a execução dos processos
-    for(int i = numLines-1; i >=0; i--) {
-        
+    for(int i = 0; i < numLines; i++) {
+
         // Trave de execução quando não há nenhum core disponível
         // Fica em busy_waiting até um processo filho alocado da exit() e libera um core
         while(available_cores == 0) {
-            busy_waiting(cores, &available_cores, child_pid, child_id);
+            busy_waiting(cores, &available_cores, child_pid, child_id, numLines, &insertPtr, queue);
         }
 
         // Trave de execução quando não há nenhum processo que pode ser executado no momento
         // Devido a lista de dependências
+        // TODO TODO
 
-        // Aloca o core para o processo
-        available_cores -= 1;
-
-        int id = stack[i];
-        printf("id: %d\n",id);
+        // Obtém o próximo nó a ser executado, que não possui pendências
+        int id = -1;
+        do { 
+            id = readFromQueue(&readPtr, queue);   
+        } 
+        while (id == -1);
+        printf("v: %d\n", id);
         enum Type type = procType[id];
+
+        // Aloca um core para esse processo
+        available_cores -= 1;
 
         // Cria um fork do processo atual
         pid_t pid = fork();
@@ -251,7 +269,9 @@ int main(int argc, char *argv[]) {
 
         else if (pid > 0) { // Somente o processo pai entra aqui
             child_pid[i % cores] = pid; 
-            child_id[i % cores] = id;
+            child_id[i % cores] = id; // fix this
+
+            attQueue(id, numLines, &insertPtr, queue);
 
             print_time();
             printf("/ (pid %d) forked (pid %d)\n", getpid(), pid);
@@ -271,7 +291,7 @@ int main(int argc, char *argv[]) {
     // Mas eles podem estar sendo executados ainda
     // Trava a execução até TODOS os filhos derem exit()
     while(available_cores < cores) {
-        busy_waiting(cores, &available_cores, child_pid, child_id);
+        busy_waiting(cores, &available_cores, child_pid, child_id, numLines, &insertPtr, queue);
     }
 
     // termina o temporizador do Makespan
