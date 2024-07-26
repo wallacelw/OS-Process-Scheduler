@@ -13,14 +13,15 @@ int main() {
 
     // simulate a real process
     long int i = 0;
-    long limit = 13.8e10;
+    long limit = 13.8e9;
     for(i=0;i<limit;i++) {}
 
     // get end time in seconds
     double end_time = clock();
     end_time /= CLOCKS_PER_SEC;
 
-    // compute runtime and print it
+    // compute runtime and print it in the STDOUT/PIPE
     double run_time = end_time - start_time;
-    printf("Time Elapsed for Process (pid %d): %.6lf \n", getpid(), run_time);
+    printf("%010.5lf", run_time);
+    fflush(NULL);
 }

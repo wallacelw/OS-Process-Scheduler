@@ -29,6 +29,9 @@ typedef struct {
     char input_dependency[100];
 } Data;
 
+// O tempo de execução de cada processo
+double execution_time[MAXN];
+
 // Função para ler o arquivo e armazenar os dados em uma lista
 Data* readFile(const char *filename, int *numLines) {
     FILE *file = fopen(filename, "r");
@@ -95,7 +98,7 @@ void make_graph(Data* dataList, int num){
 void print_time() {
     double time = clock();
     time /= CLOCKS_PER_SEC;
-    printf("[%010.6lf] ", time);
+    printf("[%010.5lf] ", time);
 }
 
 // Lê o próximo elemento disponível na lista
@@ -125,7 +128,7 @@ void attQueue(int v, int n, int* insertPtr, int* queue) {
 }
 
 // Função para verificar se algum processo filho deu exit()
-void busy_waiting(int cores, int *available_cores, pid_t child_pid[], int child_id[], int numLines, int* insertPtr, int *queue) {
+void busy_waiting(int cores, int *available_cores, pid_t child_pid[], int child_id[], int numLines, int* insertPtr, int *queue, int (*fd)[2]) {
 
     for(int j=0; j<cores; j++) if (child_pid[j]) {
 
@@ -136,12 +139,27 @@ void busy_waiting(int cores, int *available_cores, pid_t child_pid[], int child_
             print_time();
             printf("+ (pid %d) {id %d} Exited with status %d\n", child_pid[j], child_id[j], WEXITSTATUS(status));
             
-            // atualiza o grau de entrada dos nós adjacentes
+            // Atualiza o grau de entrada dos nós adjacentes
             attQueue(child_id[j], numLines, insertPtr, queue);
 
             // libera um core
             *available_cores += 1;
 
+            // lê o tempo de execução escrito no pipe pelo processo filho
+            char buffer[15]; // 4 digits + '.' + 6 digits + '\0'
+            ssize_t count = read(fd[child_id[j]][0], buffer, sizeof(buffer));
+            if (count < 0) {
+                perror("read");
+                exit(EXIT_FAILURE);
+            }
+            char *trash;
+            execution_time[child_id[j]] = strtod(buffer, &trash);
+            
+            // Fecha o pipe de escrita
+            close(fd[child_id[j]][0]);
+
+            // libera os valores armazenados no core
+            child_id[j] = -1;
             child_pid[j] = 0;
             break;
         }
@@ -160,7 +178,7 @@ int main(int argc, char *argv[]) {
     // verifica se foram passsados 2 atributos
     if (argc != 3) {
         printf("O usuário não informou os dois parâmetros obrigatórios! \n");
-        return 0;
+        exit(EXIT_FAILURE);
     }
 
     // Salva o número de cores disponíveis pelo sistema
@@ -222,13 +240,16 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    // Tabela para armazenar os pipes de cada processo
+    int fd[numLines+10][2];
+
     // Começa a execução dos processos
     for(int i = 0; i < numLines; i++) {
 
         // Trave de execução quando não há nenhum core disponível
         // Fica em busy_waiting até um processo filho alocado da exit() e libera um core
         while(available_cores == 0) {
-            busy_waiting(cores, &available_cores, child_pid, child_id, numLines, &insertPtr, queue);
+            busy_waiting(cores, &available_cores, child_pid, child_id, numLines, &insertPtr, queue, fd);
         }
 
         // Trava a execução quando não há nenhum processo que pode ser executado no momento
@@ -236,7 +257,7 @@ int main(int argc, char *argv[]) {
         // então obtém o próximo nó a ser executado, que não possui pendências
         int id = -1;
         do { 
-            busy_waiting(cores, &available_cores, child_pid, child_id, numLines, &insertPtr, queue);
+            busy_waiting(cores, &available_cores, child_pid, child_id, numLines, &insertPtr, queue, fd);
             id = readFromQueue(&readPtr, queue);
         } while (id == -1);
 
@@ -253,10 +274,22 @@ int main(int argc, char *argv[]) {
         }
         available_cores -= 1;
 
+        // Cria um pipe para o filho informar o pai do seu tempo de execução
+        if(pipe(fd[id]) == -1) {
+            perror("pipe");
+            exit(EXIT_FAILURE);
+        }
+
         // Cria um fork do processo atual
         pid_t pid = fork();
 
         if (pid == 0) { // Somente o processo filho entra aqui
+
+            // Fecha o pipe de leitura, já que o filho apenas escreve
+            close(fd[id][0]);
+
+            // converte o STDOUT do processo filho para o pipe de escrita
+            dup2(fd[id][1], STDOUT_FILENO);
 
             if (type == T15) {
                 char *args[] = {"./process15", NULL};
@@ -276,14 +309,15 @@ int main(int argc, char *argv[]) {
 
         else if (pid > 0) { // Somente o processo pai entra aqui
 
+            // Fecha o pipe de escrita, já que o pai apenas lê
+            close(fd[id][1]);
+
             // salva na tabela o id e o pid do processo a ser executado
             child_pid[used_core] = pid;
             child_id[used_core] = id;
 
-            // attQueue(id, numLines, &insertPtr, queue);
-
             print_time();
-            printf("/ (pid %d) forked (pid %d)\n", getpid(), pid);
+            printf("/ (pid %d) Forked (pid %d)\n", getpid(), pid);
 
             print_time();
             printf("- (pid %d) {id %d} Execute {type %d}\n", pid, id, type);
@@ -295,12 +329,12 @@ int main(int argc, char *argv[]) {
         }
 
     }
-
+    
     // Acabaram os processes que deviam ser executados
     // Mas eles podem estar sendo executados ainda
     // Trava a execução até TODOS os filhos derem exit()
     while(available_cores < cores) {
-        busy_waiting(cores, &available_cores, child_pid, child_id, numLines, &insertPtr, queue);
+        busy_waiting(cores, &available_cores, child_pid, child_id, numLines, &insertPtr, queue, fd);
     }
 
     // termina o temporizador do Makespan
@@ -309,5 +343,9 @@ int main(int argc, char *argv[]) {
 
     // Calcula o Makespan e imprime
     double run_time = end_time - start_time;
-    printf("Makespan time: %.6lf seconds \n", run_time);
+    printf("Tempo de Makespan: %.6lf segundos \n", run_time);
+
+    for(int i=1; i<=numLines; i++) {
+        printf("Tempo de Execução do processo com {id = %d}: %010.5lf \n", i, execution_time[i]);
+    }
 }
