@@ -21,5 +21,7 @@ gcc -g -Wall -Wextra -o scheduler scheduler.c && ./scheduler <cores_qtd>
 # Members
 
 211010280 - Breno Costa Avelino Lima
+
 211036052 - Henrique de Oliveira Ramos  
+
 200028880 - Wallace Ben Teng Lin Wu
