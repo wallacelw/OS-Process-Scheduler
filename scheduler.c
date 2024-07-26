@@ -6,10 +6,11 @@
 #include <time.h>
 #include <string.h>
 #include <stdbool.h>
-const int MAXN = 1000;
+const int MAXN = 10000;
 enum Type { T15, T30 };
 
 bool adj[MAXN][MAXN];
+int indeg[MAXN];
 enum Type procType[MAXN];
 
 struct Process {
@@ -73,7 +74,10 @@ void make_graph(Data* dataList,int num){
         for(int j=0;j<50;j++){
             char curChar=dataList[i].input_dependency[j];
             if(curChar==','){
-                adj[curNum][dataList[i].id]=true;
+                if(curNum!=0){
+                    adj[curNum][dataList[i].id]=true;
+                    indeg[dataList[i].id]++;
+                }
                 curNum=0;
                 continue;
             }
@@ -104,7 +108,7 @@ int* topoSort(int n){
     int* stack = (int*)malloc(n * sizeof(int));
     int idx = 0;
 
-    for(int i = 1;i<=n;i++){
+    for(int i=0;i<=n;i++){
         if(vis[i]==false)dfs(i,n,vis,stack,&idx);
     }
 
@@ -143,6 +147,28 @@ void busy_waiting(int cores, int *available_cores, pid_t child_pid[], int child_
     }
 }
 
+
+void addToStack(int v,int* insertPtr,int*stack){
+    printf("adding: %d\n",v);
+    stack[*insertPtr]=v;
+    (*insertPtr)++;
+}
+
+int readFromStack(int *readPtr,int *stack){
+    int aux =  stack[*readPtr];
+    (*readPtr)++;
+    return aux;
+}
+
+void attStack(int v,int n,int* insertPtr,int *stack){
+    for(int i = 1;i<=n;i++){
+        if(adj[v][i]){
+            indeg[i]--;
+            if(indeg[i]==0)addToStack(i,insertPtr,stack);
+        }
+    }
+}
+
 int main(int argc, char *argv[]) {
     
     const int cores = atoi(argv[1]);
@@ -159,11 +185,7 @@ int main(int argc, char *argv[]) {
     // initialize array to store children pids with value 0 (not used)
     memset(child_pid, 0, sizeof(child_pid));
 
-    // struct Process queue[num_processes] = {
-    //     // hard-coded testcase
-    //     {0, T15}, {1, T30}, {2, T15}, {3, T15}, {4, T30}, {5, T15}
-    // };
-
+    memset(indeg, 0, sizeof(indeg));
 
     int numLines;
     Data *dataList = readFile(filename, &numLines);
@@ -171,7 +193,7 @@ int main(int argc, char *argv[]) {
     make_graph(dataList,numLines);
     
     // testa o graph
-    for(int i = 0;i<MAXN;i++){
+    for(int i =1;i<MAXN;i++){
         for(int j=0;j<MAXN;j++){
             if(adj[i][j]){
                 printf("aresta de %d para %d\n",i,j);
@@ -179,22 +201,37 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    int* stack = topoSort(numLines);
 
+    // //  *******************************
+    // int* stack = topoSort(numLines);
 
-    if (dataList != NULL) {
-        printDataList(dataList, numLines);
-        free(dataList);
-    }
+    // if (dataList != NULL) {
+    //     printDataList(dataList, numLines);
+    //     free(dataList);
+    // }
 
-    printf("TopoSort:\n");
-    printf("%d\n",numLines);
-    for(int i =numLines-1;i>=0;i--){
-        printf("%d, ",stack[i]);
-    }
-    printf("\n");
+    // printf("TopoSort:\n");
+    // printf("%d\n",numLines);
+    // for(int i =numLines-1;i>=0;i--){
+    //     printf("%d, ",stack[i]);
+    // }
+    // printf("\n");
+    // for(int i = 1;i<=numLines;i++){
+    //     printf("%d\n",(procType[i]==T15));
+    // }
+    //  *******************************
+
+    int* stack = (int*)malloc(numLines* sizeof(int));
+    int insertPtr = 0;
+    int readPtr = 0;
+    memset(stack, -1, numLines * sizeof(int));
+
     for(int i = 1;i<=numLines;i++){
-        printf("%d\n",(procType[i]==T15));
+        printf("i: %d, indeg = %d\n",i,indeg[i]);
+        if(indeg[i]==0){
+            printf("i: %d\n",i);
+            addToStack(i,&insertPtr,stack);
+        }
     }
     // get start time in seconds
     double start_time = clock();
@@ -202,7 +239,13 @@ int main(int argc, char *argv[]) {
 
     // execute processes
     for(int i = numLines-1; i >=0; i--) {
-        
+        int id=-1;
+        do{ 
+            id = readFromStack(&readPtr,stack);   
+        }while(id==-1);
+        printf("v: %d\n",id);
+        enum Type type = procType[id];
+
         // if there are no cores available, block and wait for any child_pid to terminate
         // Block using busy waiting!
         while(available_cores == 0) {
@@ -215,9 +258,6 @@ int main(int argc, char *argv[]) {
         // fork main process into two
         pid_t pid = fork();
 
-        int id = stack[i];
-        printf("id: %d\n",id);
-        enum Type type = procType[id];
 
         if (pid == 0) { // child_pid process
 
@@ -245,19 +285,20 @@ int main(int argc, char *argv[]) {
 
             print_time();
             printf("- (pid %d) {id %d} Execute {type %d}\n", pid, id, type);
+            attStack(id,numLines,&insertPtr,stack);
         }
 
         else { // (pid < 0) => error
             perror("fork");
             exit(EXIT_FAILURE);
         }
-    }
 
+
+    }
     // block main process until all children exit and cores are released
     while(available_cores < cores) {
         busy_waiting(cores, &available_cores, child_pid, child_id);
     }
-
     // get end time in seconds
     double end_time = clock();
     end_time /= CLOCKS_PER_SEC;
