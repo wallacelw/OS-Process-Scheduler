@@ -13,9 +13,9 @@ int main() {
 
     // simulate a real process
     long int i = 0;
-    long limit = 6.95e9;
+    long limit = 6.95e10;
     for(i=0;i<limit;i++) {}
-
+    
     // get end time in seconds
     double end_time = clock();
     end_time /= CLOCKS_PER_SEC;
