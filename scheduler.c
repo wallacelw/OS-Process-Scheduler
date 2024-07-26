@@ -99,14 +99,14 @@ void print_time() {
 }
 
 // Lê o próximo elemento disponível na lista
-int readFromQueue(int *readPtr, int* queue){
+int readFromQueue(int *readPtr, int* queue) {
     int aux = queue[*readPtr];
-    (*readPtr)++;
+    if (aux != -1) (*readPtr)++;
     return aux;
 }
 
 // Adiciona um nó com grau de entrada 0 na fila
-void addToQueue(int v, int* insertPtr, int* queue){
+void addToQueue(int v, int* insertPtr, int* queue) {
     printf("adding: %d\n", v);
     queue[*insertPtr] = v;
     (*insertPtr)++;
@@ -115,7 +115,7 @@ void addToQueue(int v, int* insertPtr, int* queue){
 
 // dado que um processo finalizou,
 // atualiza o grau de entrada dos nós adjacentes
-void attQueue(int v, int n, int* insertPtr, int* queue){
+void attQueue(int v, int n, int* insertPtr, int* queue) {
     for(int i=1; i<=n; i++){
         if(adj[v][i]){
             indeg[i]--;
@@ -126,6 +126,7 @@ void attQueue(int v, int n, int* insertPtr, int* queue){
 
 // Função para verificar se algum processo filho deu exit()
 void busy_waiting(int cores, int *available_cores, pid_t child_pid[], int child_id[], int numLines, int* insertPtr, int *queue) {
+
     for(int j=0; j<cores; j++) if (child_pid[j]) {
 
         int status;
@@ -136,7 +137,7 @@ void busy_waiting(int cores, int *available_cores, pid_t child_pid[], int child_
             printf("+ (pid %d) {id %d} Exited with status %d\n", child_pid[j], child_id[j], WEXITSTATUS(status));
             
             // atualiza o grau de entrada dos nós adjacentes
-            // attQueue(child_id[j], numLines, insertPtr, queue);
+            attQueue(child_id[j], numLines, insertPtr, queue);
 
             // libera um core
             *available_cores += 1;
@@ -230,20 +231,26 @@ int main(int argc, char *argv[]) {
             busy_waiting(cores, &available_cores, child_pid, child_id, numLines, &insertPtr, queue);
         }
 
-        // Trave de execução quando não há nenhum processo que pode ser executado no momento
-        // Devido a lista de dependências
-        // TODO TODO
-
-        // Obtém o próximo nó a ser executado, que não possui pendências
+        // Trava a execução quando não há nenhum processo que pode ser executado no momento
+        // devido a lista de dependências até que exista um elemento,
+        // então obtém o próximo nó a ser executado, que não possui pendências
         int id = -1;
         do { 
-            id = readFromQueue(&readPtr, queue);   
-        } 
-        while (id == -1);
+            busy_waiting(cores, &available_cores, child_pid, child_id, numLines, &insertPtr, queue);
+            id = readFromQueue(&readPtr, queue);
+        } while (id == -1);
+
         printf("v: %d\n", id);
         enum Type type = procType[id];
 
         // Aloca um core para esse processo
+        int used_core = -1;
+        for(int j=0; j<cores; j++) {
+            if (child_pid[j] == 0) {
+                used_core = j; 
+                break;
+            }
+        }
         available_cores -= 1;
 
         // Cria um fork do processo atual
@@ -268,10 +275,12 @@ int main(int argc, char *argv[]) {
         }
 
         else if (pid > 0) { // Somente o processo pai entra aqui
-            child_pid[i % cores] = pid; 
-            child_id[i % cores] = id; // fix this
 
-            attQueue(id, numLines, &insertPtr, queue);
+            // salva na tabela o id e o pid do processo a ser executado
+            child_pid[used_core] = pid;
+            child_id[used_core] = id;
+
+            // attQueue(id, numLines, &insertPtr, queue);
 
             print_time();
             printf("/ (pid %d) forked (pid %d)\n", getpid(), pid);
